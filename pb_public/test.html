@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>課堂互動系統 - 教室建立測試</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>課堂互動系統 - 教室建立測試</h1>
+    
+    <div class="test-section">
+        <h2>基本連接測試</h2>
+        <button id="testBtn">測試 PocketBase 連接</button>
+        <div id="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>教室建立測試 (模擬主應用程式)</h2>
+        <button id="testCreateClassroom">建立測試教室</button>
+        <div id="testResult"></div>
+    </div>
+
+    <script type="module">
+        import PocketBase from 'https://cdn.skypack.dev/pocketbase';
+        
+        const pb = new PocketBase('http://127.0.0.1:8090');
+        const baseAppId = 'default-classroom-app'; // 使用與主應用程式相同的 app_id
+        
+        // 複製主應用程式的 handlePBError 函數
+        function handlePBError(error, operation) {
+            console.error(`[PocketBase] ${operation} failed:`, error);
+            let message = `操作失敗: ${operation}`;
+            if (error.response?.message) {
+                message += ` - ${error.response.message}`;
+            }
+            if (error.response?.data) {
+                console.error('詳細錯誤資訊:', error.response.data);
+                message += `\n詳細錯誤: ${JSON.stringify(error.response.data, null, 2)}`;
+            }
+            return message;
+        }
+        
+        // 複製主應用程式的 ClassroomAPI
+        const ClassroomAPI = {
+            async upsert(classroomCode, data) {
+                try {
+                    console.log('ClassroomAPI.upsert 被調用:', { classroomCode, data });
+                    
+                    // 先嘗試查找現有教室
+                    const existingRecords = await pb.collection('classrooms').getList(1, 1, {
+                        filter: `code = "${classroomCode}" && app_id = "${baseAppId}"`
+                    });
+                    
+                    if (existingRecords.items.length > 0) {
+                        // 更新現有教室
+                        console.log('更新現有教室:', existingRecords.items[0].id);
+                        return await pb.collection('classrooms').update(existingRecords.items[0].id, data);
+                    } else {
+                        // 建立新教室
+                        const createData = {
+                            code: classroomCode,
+                            app_id: baseAppId,
+                            ...data
+                        };
+                        console.log('建立新教室，資料:', createData);
+                        return await pb.collection('classrooms').create(createData);
+                    }
+                } catch (error) {
+                    const errorMsg = handlePBError(error, '建立/更新教室');
+                    throw new Error(errorMsg);
+                }
+            }
+        };
+        
+        // 基本連接測試
+        const result = document.getElementById('result');
+        
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            try {
+                // 測試基本連接
+                result.innerHTML = '<p>測試中...</p>';
+                
+                // 列出所有 collections
+                const collections = await pb.collections.getFullList();
+                result.innerHTML = `
+                    <h2>連接成功！</h2>
+                    <h3>Collections:</h3>
+                    <ul>
+                        ${collections.map(c => `<li>${c.name} (${c.type})</li>`).join('')}
+                    </ul>
+                `;
+                
+                // 測試建立教室
+                const testClassroom = await pb.collection('classrooms').create({
+                    code: 'TEST123',
+                    app_id: 'test-app',
+                    teacher_id: 'test-teacher',
+                    active_mode: 'waiting',
+                    is_paused: false
+                });
+                
+                result.innerHTML += `<p>✅ 測試教室建立成功: ${testClassroom.id}</p>`;
+                
+                // 清理測試資料
+                await pb.collection('classrooms').delete(testClassroom.id);
+                result.innerHTML += `<p>✅ 測試資料清理完成</p>`;
+                
+            } catch (error) {
+                result.innerHTML = `<p style="color: red;">錯誤: ${error.message}</p>`;
+                console.error('測試失敗:', error);
+            }
+        });
+        
+        // 教室建立測試 (完全模擬主應用程式)
+        document.getElementById('testCreateClassroom').addEventListener('click', async () => {
+            const testResult = document.getElementById('testResult');
+            testResult.innerHTML = '<p class="info">建立測試教室中...</p>';
+            
+            console.log('使用的 baseAppId:', baseAppId);
+            
+            try {
+                // 完全模擬主應用程式的資料
+                const classroomCode = 'TEST_' + Date.now();
+                const userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                
+                const initialData = { 
+                    active_mode: 'waiting', 
+                    teacher_id: userId, 
+                    is_paused: false
+                };
+                
+                console.log('準備建立教室:', { classroomCode, initialData, baseAppId });
+                
+                // 直接使用 PocketBase API 而不是 ClassroomAPI
+                const createData = {
+                    code: classroomCode,
+                    app_id: baseAppId,
+                    ...initialData
+                };
+                
+                console.log('最終發送資料:', createData);
+                
+                const classroom = await pb.collection('classrooms').create(createData);
+                
+                testResult.innerHTML = `
+                    <p class="success">✅ 教室建立成功！</p>
+                    <pre>${JSON.stringify(classroom, null, 2)}</pre>
+                `;
+                
+                // 清理測試資料
+                setTimeout(async () => {
+                    try {
+                        await pb.collection('classrooms').delete(classroom.id);
+                        testResult.innerHTML += `<p class="info">🧹 測試資料已清理</p>`;
+                    } catch (e) {
+                        console.error('清理失敗:', e);
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                console.error('建立教室失敗:', error);
+                console.error('錯誤詳情:', {
+                    name: error.name,
+                    message: error.message,
+                    status: error.status,
+                    response: error.response
+                });
+                
+                testResult.innerHTML = `
+                    <p class="error">❌ 建立失敗: ${error.message}</p>
+                    <p class="error">狀態碼: ${error.status}</p>
+                    <pre class="error">${JSON.stringify(error.response, null, 2)}</pre>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

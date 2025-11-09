@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PocketBase 診斷工具</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>PocketBase 診斷工具</h1>
+    
+    <div class="section">
+        <h2>1. 管理員登入</h2>
+        <input type="email" id="adminEmail" placeholder="管理員 Email" style="margin: 5px; padding: 5px;">
+        <input type="password" id="adminPassword" placeholder="管理員密碼" style="margin: 5px; padding: 5px;">
+        <button id="adminLogin">管理員登入</button>
+        <div id="loginResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>2. 連接測試</h2>
+        <button id="testConnection">測試連接</button>
+        <div id="connectionResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>3. Collections 檢查</h2>
+        <button id="checkCollections">檢查 Collections</button>
+        <div id="collectionsResult"></div>
+    </div>
+    
+    <div class="section">
+        <h2>4. 建立測試教室</h2>
+        <button id="createTestClassroom">建立測試教室</button>
+        <div id="classroomResult"></div>
+    </div>
+
+    <div class="section">
+        <h2>5. 自動建立 Collections</h2>
+        <button id="createCollections">自動建立所需的 Collections</button>
+        <div id="createResult"></div>
+    </div>
+
+    <script type="module">
+        import PocketBase from 'https://cdn.skypack.dev/pocketbase';
+        
+        const pb = new PocketBase('http://127.0.0.1:8090');
+        
+        document.getElementById('adminLogin').addEventListener('click', async () => {
+            const result = document.getElementById('loginResult');
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            if (!email || !password) {
+                result.innerHTML = '<p class="error">請輸入管理員 Email 和密碼</p>';
+                return;
+            }
+            
+            try {
+                result.innerHTML = '<p class="info">登入中...</p>';
+                const authData = await pb.admins.authWithPassword(email, password);
+                result.innerHTML = `<p class="success">✅ 管理員登入成功！</p><p>Token: ${authData.token.substring(0, 20)}...</p>`;
+            } catch (error) {
+                result.innerHTML = `<p class="error">❌ 登入失敗: ${error.message}</p>`;
+            }
+        });
+        
+        document.getElementById('testConnection').addEventListener('click', async () => {
+            const result = document.getElementById('connectionResult');
+            try {
+                result.innerHTML = '<p class="info">測試中...</p>';
+                const health = await pb.health.check();
+                result.innerHTML = `<p class="success">✅ 連接成功！</p><pre>${JSON.stringify(health, null, 2)}</pre>`;
+            } catch (error) {
+                result.innerHTML = `<p class="error">❌ 連接失敗: ${error.message}</p>`;
+            }
+        });
+        
+        document.getElementById('checkCollections').addEventListener('click', async () => {
+            const result = document.getElementById('collectionsResult');
+            try {
+                result.innerHTML = '<p class="info">檢查中...</p>';
+                const collections = await pb.collections.getFullList();
+                
+                const requiredCollections = ['classrooms', 'student_responses', 'student_presence', 'peer_reviews'];
+                let html = '<h3>現有 Collections:</h3><ul>';
+                
+                collections.forEach(col => {
+                    const isRequired = requiredCollections.includes(col.name);
+                    html += `<li ${isRequired ? 'class="success"' : ''}>${col.name} (${col.type}) ${isRequired ? '✅' : ''}</li>`;
+                });
+                
+                html += '</ul><h3>缺少的 Collections:</h3><ul>';
+                const existingNames = collections.map(c => c.name);
+                const missing = requiredCollections.filter(name => !existingNames.includes(name));
+                
+                if (missing.length === 0) {
+                    html += '<li class="success">無缺少的 Collections ✅</li>';
+                } else {
+                    missing.forEach(name => {
+                        html += `<li class="error">${name} ❌</li>`;
+                    });
+                }
+                
+                html += '</ul>';
+                result.innerHTML = html;
+            } catch (error) {
+                result.innerHTML = `<p class="error">❌ 檢查失敗: ${error.message}</p>`;
+            }
+        });
+        
+        document.getElementById('createTestClassroom').addEventListener('click', async () => {
+            const result = document.getElementById('classroomResult');
+            try {
+                result.innerHTML = '<p class="info">建立測試教室中...</p>';
+                
+                const testData = {
+                    code: 'DIAGNOSTIC_TEST',
+                    app_id: 'test-app',
+                    teacher_id: 'test-teacher',
+                    active_mode: 'waiting',
+                    is_paused: false
+                };
+                
+                console.log('嘗試建立教室，資料:', testData);
+                
+                const classroom = await pb.collection('classrooms').create(testData);
+                result.innerHTML = `<p class="success">✅ 測試教室建立成功！</p><pre>${JSON.stringify(classroom, null, 2)}</pre>`;
+                
+                // 清理測試資料
+                await pb.collection('classrooms').delete(classroom.id);
+                result.innerHTML += `<p class="info">🧹 測試資料已清理</p>`;
+                
+            } catch (error) {
+                console.error('建立教室失敗:', error);
+                result.innerHTML = `<p class="error">❌ 建立失敗: ${error.message}</p>`;
+                if (error.response?.data) {
+                    result.innerHTML += `<pre class="error">${JSON.stringify(error.response.data, null, 2)}</pre>`;
+                }
+            }
+        });
+        
+        document.getElementById('createCollections').addEventListener('click', async () => {
+            const result = document.getElementById('createResult');
+            result.innerHTML = '<p class="info">建立 Collections 中...</p>';
+            
+            try {
+                // 檢查並建立 classrooms collection
+                try {
+                    await pb.collections.getOne('classrooms');
+                    result.innerHTML += '<p class="success">✅ classrooms collection 已存在</p>';
+                } catch (e) {
+                    // Collection 不存在，建立它
+                    await pb.collections.create({
+                        name: 'classrooms',
+                        type: 'base',
+                        schema: [
+                            { name: 'code', type: 'text', required: true },
+                            { name: 'app_id', type: 'text', required: true },
+                            { name: 'teacher_id', type: 'text', required: true },
+                            { name: 'active_mode', type: 'text', required: false },
+                            { name: 'is_paused', type: 'bool', required: false },
+                            { name: 'background_image', type: 'text', required: false },
+                            { name: 'multiple_choice_questions', type: 'text', required: false },
+                            { name: 'dispatch_settings', type: 'text', required: false }
+                        ]
+                    });
+                    result.innerHTML += '<p class="success">✅ classrooms collection 已建立</p>';
+                }
+                
+                // 檢查並建立其他 collections...
+                const collections = [
+                    {
+                        name: 'student_responses',
+                        schema: [
+                            { name: 'classroom_code', type: 'text', required: true },
+                            { name: 'student_name', type: 'text', required: true },
+                            { name: 'answer', type: 'text', required: false },
+                            { name: 'timestamp', type: 'date', required: false },
+                            { name: 'is_nominated', type: 'bool', required: false }
+                        ]
+                    },
+                    {
+                        name: 'student_presence',
+                        schema: [
+                            { name: 'classroom_code', type: 'text', required: true },
+                            { name: 'user_id', type: 'text', required: true },
+                            { name: 'student_name', type: 'text', required: true },
+                            { name: 'last_seen', type: 'date', required: false }
+                        ]
+                    },
+                    {
+                        name: 'peer_reviews',
+                        schema: [
+                            { name: 'classroom_code', type: 'text', required: true },
+                            { name: 'reviewer_name', type: 'text', required: true },
+                            { name: 'reviewed_name', type: 'text', required: true },
+                            { name: 'score', type: 'number', required: true }
+                        ]
+                    }
+                ];
+                
+                for (const colDef of collections) {
+                    try {
+                        await pb.collections.getOne(colDef.name);
+                        result.innerHTML += `<p class="success">✅ ${colDef.name} collection 已存在</p>`;
+                    } catch (e) {
+                        await pb.collections.create({
+                            name: colDef.name,
+                            type: 'base',
+                            schema: colDef.schema
+                        });
+                        result.innerHTML += `<p class="success">✅ ${colDef.name} collection 已建立</p>`;
+                    }
+                }
+                
+                result.innerHTML += '<p class="success">🎉 所有 Collections 準備就緒！</p>';
+                
+            } catch (error) {
+                result.innerHTML += `<p class="error">❌ 建立失敗: ${error.message}</p>`;
+                console.error('建立 collections 失敗:', error);
+            }
+        });
+    </script>
+</body>
+</html>

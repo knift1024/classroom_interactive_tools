@@ -1,0 +1,5 @@
+# Ignore pocketbase executable
+pocketbase.exe
+
+# Ignore pocketbase data
+pb_data/
