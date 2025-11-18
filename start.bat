@@ -5,10 +5,8 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr "IPv4"') do (
 	set ip=%%a
 	set ip=!ip: =!
 	set ip=!ip:~0,15!
-	echo !ip! | findstr /R "192\.168\.[0-9][0-9]*\.[0-9][0-9]*" >nul
-	if errorlevel 1 (
-		rem 格式不符，略過
-	) else (
+	rem Check if the IP is not a loopback address and not empty
+	if not "!ip!"=="127.0.0.1" if not "!ip!"=="" (
 		if not defined LANIP set LANIP=!ip!
 	)
 )
